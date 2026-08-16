@@ -7,7 +7,7 @@ const DEFAULT_MEALS = [
   {id:"kinder2", name:"2 קינדר קארדס", calories:120, category:"sweet", active:true, icon:"🍫"},
   {id:"petit-nutella", name:"פתיבר עם נוטלה", calories:60, category:"sweet", active:true, icon:"🍪"},
   {id:"ice99", name:"שלגון 99", calories:99, category:"sweet", active:true, icon:"🍦"},
-  {id:"fruit", name:"פרי", calories:70, category:"fruit", active:true, icon:"🍎"},
+  {id:"fruit", name:"פרי", calories:70, category:"snack", active:true, icon:"🍎", isFruit:true},
   {id:"pita-hummus-egg", name:"פיתה כוסמין + חומוס + חביתה מביצה אחת", calories:260, category:"meal", active:true, icon:"🫓"},
   {id:"rice-pb-honey", name:"פריכית + כפית רזה חמאת בוטנים ודבש", calories:70, category:"snack", active:true, icon:"🥜"},
   {id:"roll-salami", name:"לחמניית כוסמין + חרדל + 4 פרוסות סלמי דק", calories:240, category:"meal", active:true, icon:"🥪"},
@@ -18,7 +18,7 @@ const DEFAULT_MEALS = [
 ];
 
 const CATEGORY_LABELS = {
-  coffee:"קפה", breakfast:"בוקר", snack:"נשנוש", sweet:"מתוק", meal:"ארוחה", fruit:"פרי"
+  coffee:"קפה", breakfast:"בוקר", snack:"נשנוש", sweet:"מתוק", meal:"ארוחה"
 };
 
 const TIMES = ["07:30","09:00","10:30","12:30","14:30","17:00","19:30","21:00"];
@@ -30,8 +30,16 @@ let meals = JSON.parse(localStorage.getItem("bisli_meals") || "null") || DEFAULT
 // Remove those legacy defaults so they can never appear alone in a daily card.
 const LEGACY_BASE_IDS = new Set(["pita-spelt","spelt-roll","rice-cake"]);
 const beforeMigration = meals.length;
+
+// Convert the old visible "fruit" category into a hidden flexible-fruit flag.
+meals = meals.map(m => {
+  if (m.id === "fruit" || m.category === "fruit") {
+    return {...m, category:"snack", isFruit:true};
+  }
+  return m;
+});
 meals = meals.filter(m => !LEGACY_BASE_IDS.has(m.id));
-if (meals.length !== beforeMigration) {
+if (meals.length !== beforeMigration || meals.some(m => m.isFruit && m.category === "snack")) {
   localStorage.setItem("bisli_meals", JSON.stringify(meals));
 }
 let settings = JSON.parse(localStorage.getItem("bisli_settings") || "null") || {morningCoffee:"cold"};
@@ -57,9 +65,9 @@ function generateCard(){
               || randomItem(pool.filter(m=>m.category==="coffee"));
 
   const sweets = shuffle(pool.filter(m=>m.category==="sweet"));
-  const fruits = shuffle(pool.filter(m=>m.category==="fruit"));
+  const fruits = shuffle(pool.filter(m=>m.isFruit));
   const breakfast = shuffle(pool.filter(m=>m.category==="breakfast"));
-  const snacks = shuffle(pool.filter(m=>m.category==="snack"));
+  const snacks = shuffle(pool.filter(m=>m.category==="snack" && !m.isFruit));
   const mainMeals = shuffle(pool.filter(m=>m.category==="meal"));
 
   let best = null;
@@ -107,9 +115,9 @@ function generateCard(){
   let chosen = best ? best.items : [];
   const coffeeItems = chosen.filter(x=>x.category==="coffee");
   const breakfastItems = chosen.filter(x=>x.category==="breakfast");
-  const snackItems = chosen.filter(x=>x.category==="snack");
+  const snackItems = chosen.filter(x=>x.category==="snack" && !x.isFruit);
   const sweetItems = chosen.filter(x=>x.category==="sweet");
-  const fruitItems = chosen.filter(x=>x.category==="fruit");
+  const fruitItems = chosen.filter(x=>x.isFruit);
   const mealItems = chosen.filter(x=>x.category==="meal");
 
   let ordered = [
