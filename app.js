@@ -3,15 +3,12 @@ const DEFAULT_MEALS = [
   {id:"coffee-cold", name:"קפה קר", calories:40, category:"coffee", active:true, icon:"🧊"},
   {id:"coffee-hot", name:"קפה חם קטן", calories:10, category:"coffee", active:true, icon:"☕"},
   {id:"muller", name:"מולר", calories:140, category:"breakfast", active:true, icon:"🥣"},
-  {id:"pita-spelt", name:"פיתה כוסמין", calories:99, category:"breakfast", active:true, icon:"🫓"},
-  {id:"spelt-roll", name:"לחמניית כוסמין", calories:160, category:"breakfast", active:true, icon:"🥖"},
-  {id:"rice-cake", name:"פריכית", calories:16, category:"snack", active:true, icon:"🍘"},
+  {id:"2rice-cottage", name:"2 פריכיות + קוטג׳", calories:80, category:"breakfast", active:true, icon:"🥣"},
   {id:"kinder2", name:"2 קינדר קארדס", calories:120, category:"sweet", active:true, icon:"🍫"},
   {id:"petit-nutella", name:"פתיבר עם נוטלה", calories:60, category:"sweet", active:true, icon:"🍪"},
   {id:"ice99", name:"שלגון 99", calories:99, category:"sweet", active:true, icon:"🍦"},
   {id:"fruit", name:"פרי", calories:70, category:"fruit", active:true, icon:"🍎"},
   {id:"pita-hummus-egg", name:"פיתה כוסמין + חומוס + חביתה מביצה אחת", calories:260, category:"meal", active:true, icon:"🫓"},
-  {id:"2rice-cottage", name:"2 פריכיות + קוטג׳", calories:80, category:"snack", active:true, icon:"🥣"},
   {id:"rice-pb-honey", name:"פריכית + כפית רזה חמאת בוטנים ודבש", calories:70, category:"snack", active:true, icon:"🥜"},
   {id:"roll-salami", name:"לחמניית כוסמין + חרדל + 4 פרוסות סלמי דק", calories:240, category:"meal", active:true, icon:"🥪"},
   {id:"big-salad", name:"סלט גדול", calories:400, category:"meal", active:true, icon:"🥗"},
@@ -27,6 +24,16 @@ const CATEGORY_LABELS = {
 const TIMES = ["07:30","09:00","10:30","12:30","14:30","17:00","19:30","21:00"];
 
 let meals = JSON.parse(localStorage.getItem("bisli_meals") || "null") || DEFAULT_MEALS;
+
+// Migration from early versions:
+// standalone bread/rice-cake items were calorie references, not complete suggestions.
+// Remove those legacy defaults so they can never appear alone in a daily card.
+const LEGACY_BASE_IDS = new Set(["pita-spelt","spelt-roll","rice-cake"]);
+const beforeMigration = meals.length;
+meals = meals.filter(m => !LEGACY_BASE_IDS.has(m.id));
+if (meals.length !== beforeMigration) {
+  localStorage.setItem("bisli_meals", JSON.stringify(meals));
+}
 let settings = JSON.parse(localStorage.getItem("bisli_settings") || "null") || {morningCoffee:"cold"};
 let editingId = null;
 let currentCard = null;
@@ -45,7 +52,7 @@ function randomItem(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function shuffle(arr){ return [...arr].sort(()=>Math.random()-.5); }
 
 function generateCard(){
-  const pool = meals.filter(m=>m.active);
+  const pool = meals.filter(m=>m.active && !m.baseOnly);
   const coffee = pool.find(m=>m.id === (settings.morningCoffee==="cold" ? "coffee-cold" : "coffee-hot"))
               || randomItem(pool.filter(m=>m.category==="coffee"));
 
