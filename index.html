@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f8efe8" />
+  <title>ביס לי</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="logo">ביס לי <span>♡</span></div>
+        <div class="tagline">השראה יומית לתפריט אפשרי</div>
+      </div>
+      <button class="icon-btn" id="settingsBtn" aria-label="הגדרות">⚙️</button>
+    </header>
+
+    <main>
+      <section id="todayView" class="view active">
+        <div class="hero-card">
+          <div class="hero-top">
+            <div>
+              <div class="eyebrow">הכרטיס של היום</div>
+              <h1 id="dayTitle">יום ראשון</h1>
+            </div>
+            <div class="total-box">
+              <span>סה״כ משוער</span>
+              <strong id="dayTotal">—</strong>
+            </div>
+          </div>
+          <div id="dailyMenu" class="daily-menu"></div>
+          <button id="newCardBtn" class="primary-btn">כרטיס אחר ✨</button>
+        </div>
+        <p class="tiny-note">זה רק רעיון ליום אפשרי. אפשר לקחת השראה ולהמשיך הלאה 💛</p>
+      </section>
+
+      <section id="mealsView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>המנות שלי</h2>
+            <p>מהמאגר הזה ביס לי בונה כרטיסיות יומיות</p>
+          </div>
+          <button id="addMealBtn" class="fab">＋</button>
+        </div>
+
+        <div class="search-wrap">
+          <input id="mealSearch" type="search" placeholder="חיפוש מנה..." />
+        </div>
+
+        <div id="mealsGrid" class="meals-grid"></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-view="todayView">☀️<span>היום</span></button>
+      <button class="nav-btn" data-view="mealsView">🥣<span>המנות שלי</span></button>
+    </nav>
+  </div>
+
+  <dialog id="mealDialog" class="modal">
+    <form method="dialog" id="mealForm" class="modal-card">
+      <button type="button" class="close-btn" data-close="mealDialog">×</button>
+      <h3 id="mealDialogTitle">הוספת מנה</h3>
+
+      <label>שם המנה
+        <input id="mealName" required maxlength="80" />
+      </label>
+
+      <label>קלוריות
+        <input id="mealCalories" type="number" min="1" max="2000" required />
+      </label>
+
+      <label>קטגוריה
+        <select id="mealCategory" required>
+          <option value="coffee">קפה</option>
+          <option value="breakfast">בוקר</option>
+          <option value="snack">נשנוש</option>
+          <option value="sweet">מתוק</option>
+          <option value="meal">ארוחה</option>
+          <option value="fruit">פרי</option>
+        </select>
+      </label>
+
+      <label class="toggle-row">
+        <span>פעיל בכרטיסיות</span>
+        <input id="mealActive" type="checkbox" checked />
+      </label>
+
+      <div class="modal-actions">
+        <button type="submit" class="primary-btn">שמור</button>
+        <button type="button" id="deleteMealBtn" class="danger-btn hidden">מחק מנה</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="modal">
+    <form method="dialog" class="modal-card">
+      <button type="button" class="close-btn" data-close="settingsDialog">×</button>
+      <h3>הגדרות</h3>
+      <div class="setting-block">
+        <span>קפה של הבוקר</span>
+        <div class="segmented">
+          <button type="button" data-coffee="cold">🧊 קפה קר</button>
+          <button type="button" data-coffee="hot">☕ קפה חם</button>
+        </div>
+      </div>
+      <p class="settings-note">ביס לי תשתמש בהעדפה הזאת כדי להתחיל כל כרטיס יומי.</p>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
