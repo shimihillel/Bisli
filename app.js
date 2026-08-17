@@ -1,3 +1,4 @@
+// ביס לי v1.3 — מבנה יום: 2 קפה + ארוחה גדולה אחת או 2 קטנות
 
 const DEFAULT_MEALS = [
   {id:"coffee-cold", name:"קפה קר", calories:40, category:"coffee", active:true, icon:"🧊"},
@@ -61,83 +62,170 @@ function shuffle(arr){ return [...arr].sort(()=>Math.random()-.5); }
 
 function generateCard(){
   const pool = meals.filter(m=>m.active && !m.baseOnly);
-  const coffee = pool.find(m=>m.id === (settings.morningCoffee==="cold" ? "coffee-cold" : "coffee-hot"))
+
+  const preferredCoffeeId = settings.morningCoffee==="cold" ? "coffee-cold" : "coffee-hot";
+  const coffee = pool.find(m=>m.id===preferredCoffeeId)
               || randomItem(pool.filter(m=>m.category==="coffee"));
 
-  const sweets = shuffle(pool.filter(m=>m.category==="sweet"));
-  const fruits = shuffle(pool.filter(m=>m.isFruit));
-  const breakfast = shuffle(pool.filter(m=>m.category==="breakfast"));
-  const snacks = shuffle(pool.filter(m=>m.category==="snack" && !m.isFruit));
-  const mainMeals = shuffle(pool.filter(m=>m.category==="meal"));
+  const breakfast = pool.filter(m=>m.category==="breakfast");
+  const snacks = pool.filter(m=>m.category==="snack" && !m.isFruit);
+  const fruits = pool.filter(m=>m.isFruit);
+  const sweets = pool.filter(m=>m.category==="sweet");
+
+  // Meal size is inferred only from calories; no extra field is needed in the UI.
+  // 320+ = large meal. Under 320 = small meal.
+  const largeMeals = pool.filter(m=>m.category==="meal" && m.calories>=320);
+  const smallMeals = pool.filter(m=>m.category==="meal" && m.calories<320);
+
+  const pickUnique = (arr, used) => {
+    const candidates = arr.filter(x=>!used.has(x.id));
+    if(!candidates.length) return null;
+    const x = randomItem(candidates);
+    used.add(x.id);
+    return x;
+  };
+
+  const nonMealFillers = () =>
+    pool.filter(m =>
+      m.category!=="coffee" &&
+      m.category!=="meal" &&
+      !m.isFruit
+    );
 
   let best = null;
-  for(let attempt=0; attempt<1200; attempt++){
-    const items = [];
-    if(coffee) items.push(coffee);
 
-    const used = new Set(items.map(x=>x.id));
-    const pickUnique = (arr) => {
-      const candidates = arr.filter(x=>!used.has(x.id));
-      if(!candidates.length) return null;
-      const x = randomItem(candidates);
-      used.add(x.id);
-      return x;
-    };
+  for(let attempt=0; attempt<2500; attempt++){
+    const used = new Set();
+    const slots = {};
 
-    const oneBreakfast = pickUnique(breakfast);
-    const oneSnack = pickUnique(snacks);
-    const oneSweet = pickUnique(sweets);
-    const oneFruit = pickUnique(fruits);
-    const main1 = pickUnique(mainMeals);
-    const main2 = Math.random() < .55 ? pickUnique(mainMeals) : null;
-    [oneBreakfast, oneSnack, oneSweet, oneFruit, main1, main2].filter(Boolean).forEach(x=>items.push(x));
+    // Fixed coffee rhythm.
+    if(coffee){
+      slots["07:30"] = coffee;
+      slots["17:00"] = coffee; // same current coffee "season"
+      used.add(coffee.id);
+    }
 
-    // Fill to 7-9 items with remaining active non-coffee options
-    const fillers = shuffle(pool.filter(m=>m.category!=="coffee" && !used.has(m.id)));
-    const targetCount = 7 + Math.floor(Math.random()*3);
-    while(items.length < targetCount && fillers.length){
-      const x = fillers.pop();
-      if(!used.has(x.id)){
-        items.push(x); used.add(x.id);
+    // Morning basics.
+    slots["09:00"] = pickUnique(breakfast, used) || pickUnique(snacks, used);
+    slots["10:30"] = pickUnique(snacks, used) || pickUnique(sweets, used);
+
+    // At least one fruit every day.
+    const fruit = pickUnique(fruits, used);
+
+    // Choose one of the only two allowed meal structures:
+    // A) one large meal + a non-meal in the other main slot
+    // B) two small meals: lunch + dinner
+    const canLarge = largeMeals.length > 0;
+    const canTwoSmall = smallMeals.length >= 2;
+    let structure;
+
+    if(canLarge && canTwoSmall){
+      structure = Math.random() < 0.5 ? "large" : "two-small";
+    } else if(canLarge){
+      structure = "large";
+    } else {
+      structure = "two-small";
+    }
+
+    if(structure==="large"){
+      const large = pickUnique(largeMeals, used);
+      const largeAtLunch = Math.random() < 0.65;
+
+      if(largeAtLunch){
+        slots["12:30"] = large;
+        // Evening is deliberately NOT another meal.
+        slots["19:30"] = pickUnique(snacks, used)
+                      || pickUnique(breakfast, used)
+                      || pickUnique(sweets, used);
+      } else {
+        // Lunch is a substantial non-meal; dinner is the one large meal.
+        slots["12:30"] = pickUnique(breakfast, used)
+                      || pickUnique(snacks, used)
+                      || pickUnique(sweets, used);
+        slots["19:30"] = large;
+      }
+    } else {
+      slots["12:30"] = pickUnique(smallMeals, used);
+      slots["19:30"] = pickUnique(smallMeals, used);
+    }
+
+    // Afternoon and late evening are always non-meal.
+    slots["14:30"] = pickUnique(sweets, used)
+                  || pickUnique(snacks, used)
+                  || pickUnique(breakfast, used);
+
+    // 21:00 can only be snack/sweet, never a meal.
+    slots["21:00"] = pickUnique(sweets, used)
+                  || pickUnique(snacks, used)
+                  || pickUnique(breakfast, used);
+
+    // Put fruit into a sensible non-meal slot, replacing only another non-meal.
+    if(fruit){
+      const fruitSlots = shuffle(["10:30","14:30","21:00"]);
+      const target = fruitSlots.find(t => slots[t] && slots[t].category!=="meal") || "14:30";
+      slots[target] = fruit;
+    }
+
+    // Fill any holes with non-meal items only.
+    const fillers = shuffle(nonMealFillers().filter(x=>!used.has(x.id)));
+    for(const time of TIMES){
+      if(time==="07:30" || time==="17:00") continue;
+      if(!slots[time]){
+        const next = fillers.find(x=>!used.has(x.id));
+        if(next){
+          slots[time] = next;
+          used.add(next.id);
+        }
       }
     }
 
-    const total = items.reduce((s,m)=>s+m.calories,0);
-    const score = total>=1100 && total<=1300 ? 0 : Math.min(Math.abs(total-1100),Math.abs(total-1300));
+    const card = TIMES.map(time => slots[time] ? {...slots[time], time} : null).filter(Boolean);
+
+    // Validate the structure strictly.
+    const lunch = slots["12:30"];
+    const dinner = slots["19:30"];
+    const late = slots["21:00"];
+
+    const lunchIsMeal = lunch?.category==="meal";
+    const dinnerIsMeal = dinner?.category==="meal";
+    const mealCount = [lunchIsMeal, dinnerIsMeal].filter(Boolean).length;
+
+    let validStructure = false;
+    if(mealCount===1){
+      const onlyMeal = lunchIsMeal ? lunch : dinner;
+      validStructure = onlyMeal.calories>=320;
+    } else if(mealCount===2){
+      validStructure = lunch.calories<320 && dinner.calories<320;
+    }
+
+    if(late?.category==="meal") validStructure = false;
+    if(!fruit || !card.some(x=>x.isFruit)) validStructure = false;
+    if(!coffee || !slots["07:30"] || !slots["17:00"]) validStructure = false;
+
+    const total = card.reduce((s,m)=>s+m.calories,0);
+
+    // Scoring: structure first, then calorie target, then card completeness.
+    let score = 0;
+    if(!validStructure) score += 10000;
+    if(card.length < 8) score += (8-card.length)*1000;
+
+    if(total < 1100) score += (1100-total)*4;     // strongly discourage too-low days
+    else if(total > 1300) score += (total-1300)*3;
+    else score -= 500; // reward being inside target
+
+    // Prefer not to repeat the exact same non-coffee item.
+    const nonCoffeeIds = card.filter(x=>x.category!=="coffee").map(x=>x.id);
+    score += (nonCoffeeIds.length - new Set(nonCoffeeIds).size) * 500;
 
     if(!best || score < best.score){
-      best = {items:[...items], total, score};
-      if(score===0) break;
+      best = {card, total, score};
+      if(score <= -500) break;
     }
   }
 
-  // order: coffee, then balanced progression
-  let chosen = best ? best.items : [];
-  const coffeeItems = chosen.filter(x=>x.category==="coffee");
-  const breakfastItems = chosen.filter(x=>x.category==="breakfast");
-  const snackItems = chosen.filter(x=>x.category==="snack" && !x.isFruit);
-  const sweetItems = chosen.filter(x=>x.category==="sweet");
-  const fruitItems = chosen.filter(x=>x.isFruit);
-  const mealItems = chosen.filter(x=>x.category==="meal");
-
-  let ordered = [
-    ...coffeeItems.slice(0,1),
-    ...breakfastItems.slice(0,1),
-    ...snackItems.slice(0,1),
-    ...mealItems.slice(0,1),
-    ...sweetItems.slice(0,1),
-    ...fruitItems.slice(0,1),
-    ...mealItems.slice(1,2),
-  ];
-
-  const used2 = new Set(ordered.map(x=>x.id));
-  chosen.filter(x=>!used2.has(x.id)).forEach(x=>ordered.push(x));
-  ordered = ordered.slice(0, TIMES.length);
-
-  currentCard = ordered.map((meal,i)=>({...meal,time:TIMES[i] || ""}));
+  currentCard = best?.card || [];
   renderCard();
 }
-
 function renderCard(){
   const container = $("#dailyMenu");
   const total = currentCard.reduce((s,m)=>s+m.calories,0);
