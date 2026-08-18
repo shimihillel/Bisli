@@ -1,4 +1,4 @@
-// ביס לי v1.5 — זיכרון לכרטיסים אחרונים + מניעת חזרות
+// ביס לי v1.6 — כרטיס יומי נשמר לפי תאריך
 
 const DEFAULT_MEALS = [
   {id:"coffee-cold", name:"קפה קר", calories:40, category:"coffee", active:true, icon:"🧊"},
@@ -61,6 +61,31 @@ function activeMeals(cat){
 function randomItem(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function shuffle(arr){ return [...arr].sort(()=>Math.random()-.5); }
 
+function localDateKey(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+
+function saveTodayCard(card){
+  localStorage.setItem("bisli_today_card", JSON.stringify({
+    date: localDateKey(),
+    card
+  }));
+}
+
+function loadTodayCard(){
+  try{
+    const saved = JSON.parse(localStorage.getItem("bisli_today_card") || "null");
+    if(saved && saved.date===localDateKey() && Array.isArray(saved.card) && saved.card.length){
+      return saved.card;
+    }
+  }catch(e){}
+  return null;
+}
+
 function recentMealPenalty(id){
   let penalty = 0;
   cardHistory.slice(0,5).forEach((card, idx)=>{
@@ -114,7 +139,7 @@ function rememberCard(card){
   localStorage.setItem("bisli_card_history", JSON.stringify(cardHistory));
 }
 
-function generateCard(){
+function generateCard(saveAsToday=true){
   const pool = meals.filter(m=>m.active && !m.baseOnly);
 
   const preferredCoffeeId = settings.morningCoffee==="cold" ? "coffee-cold" : "coffee-hot";
@@ -318,6 +343,9 @@ function generateCard(){
   currentCard = best?.card || [];
   if(currentCard.length){
     rememberCard(currentCard);
+    if(saveAsToday){
+      saveTodayCard(currentCard);
+    }
   }
   renderCard();
 }
@@ -423,7 +451,7 @@ $("#deleteMealBtn").addEventListener("click", ()=>{
 
 $("#addMealBtn").addEventListener("click", openAddMeal);
 $("#mealSearch").addEventListener("input", renderMeals);
-$("#newCardBtn").addEventListener("click", generateCard);
+$("#newCardBtn").addEventListener("click", ()=>generateCard(true));
 
 $$(".nav-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
@@ -447,7 +475,6 @@ $$("[data-coffee]").forEach(btn=>{
     settings.morningCoffee = btn.dataset.coffee;
     saveSettings();
     updateCoffeeButtons();
-    generateCard();
   });
 });
 function updateCoffeeButtons(){
@@ -460,4 +487,11 @@ window.editMeal = editMeal;
 window.toggleMeal = toggleMeal;
 
 renderMeals();
-generateCard();
+
+const savedTodayCard = loadTodayCard();
+if(savedTodayCard){
+  currentCard = savedTodayCard;
+  renderCard();
+} else {
+  generateCard(true);
+}
