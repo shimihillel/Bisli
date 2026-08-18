@@ -1,4 +1,4 @@
-// ביס לי v1.3 — מבנה יום: 2 קפה + ארוחה גדולה אחת או 2 קטנות
+// ביס לי v1.4 — גיוון ארוחות קטנות + עדיפות לפיתה/לחמנייה
 
 const DEFAULT_MEALS = [
   {id:"coffee-cold", name:"קפה קר", calories:40, category:"coffee", active:true, icon:"🧊"},
@@ -77,6 +77,13 @@ function generateCard(){
   const largeMeals = pool.filter(m=>m.category==="meal" && m.calories>=320);
   const smallMeals = pool.filter(m=>m.category==="meal" && m.calories<320);
 
+  // Bread-based small meals should stay visible in the rotation:
+  // examples: pita + hummus + egg, or spelt roll + salami.
+  const breadSmallMeals = smallMeals.filter(m =>
+    m.name.includes("פיתה כוסמין") || m.name.includes("לחמניית כוסמין")
+  );
+  const otherSmallMeals = smallMeals.filter(m => !breadSmallMeals.includes(m));
+
   const pickUnique = (arr, used) => {
     const candidates = arr.filter(x=>!used.has(x.id));
     if(!candidates.length) return null;
@@ -120,7 +127,7 @@ function generateCard(){
     let structure;
 
     if(canLarge && canTwoSmall){
-      structure = Math.random() < 0.5 ? "large" : "two-small";
+      structure = Math.random() < 0.30 ? "large" : "two-small";
     } else if(canLarge){
       structure = "large";
     } else {
@@ -145,8 +152,29 @@ function generateCard(){
         slots["19:30"] = large;
       }
     } else {
-      slots["12:30"] = pickUnique(smallMeals, used);
-      slots["19:30"] = pickUnique(smallMeals, used);
+      let smallA = null;
+      let smallB = null;
+
+      if(breadSmallMeals.length){
+        // Make one of the two small meals a pita/roll style meal.
+        smallA = pickUnique(breadSmallMeals, used);
+
+        // Prefer a different style for the second small meal.
+        smallB = pickUnique(otherSmallMeals, used)
+              || pickUnique(smallMeals, used);
+      } else {
+        smallA = pickUnique(smallMeals, used);
+        smallB = pickUnique(smallMeals, used);
+      }
+
+      // Randomize whether the bread-style meal lands at lunch or dinner.
+      if(Math.random() < 0.5){
+        slots["12:30"] = smallA;
+        slots["19:30"] = smallB;
+      } else {
+        slots["12:30"] = smallB;
+        slots["19:30"] = smallA;
+      }
     }
 
     // Afternoon and late evening are always non-meal.
