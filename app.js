@@ -1,16 +1,16 @@
-// ביס לי v1.6 — כרטיס יומי נשמר לפי תאריך
+// ביס לי v1.8 — ארוחות רק בצהריים/ערב; הבוקר הוא ביניים בלבד
 
 const DEFAULT_MEALS = [
   {id:"coffee-cold", name:"קפה קר", calories:40, category:"coffee", active:true, icon:"🧊"},
   {id:"coffee-hot", name:"קפה חם קטן", calories:10, category:"coffee", active:true, icon:"☕"},
-  {id:"muller", name:"מולר", calories:140, category:"breakfast", active:true, icon:"🥣"},
-  {id:"2rice-cottage", name:"2 פריכיות + קוטג׳", calories:80, category:"breakfast", active:true, icon:"🥣"},
-  {id:"kinder2", name:"2 קינדר קארדס", calories:120, category:"sweet", active:true, icon:"🍫"},
-  {id:"petit-nutella", name:"פתיבר עם נוטלה", calories:60, category:"sweet", active:true, icon:"🍪"},
-  {id:"ice99", name:"שלגון 99", calories:99, category:"sweet", active:true, icon:"🍦"},
-  {id:"fruit", name:"פרי", calories:70, category:"snack", active:true, icon:"🍎", isFruit:true},
+  {id:"muller", name:"מולר", calories:140, category:"between", active:true, icon:"🥣"},
+  {id:"2rice-cottage", name:"2 פריכיות + קוטג׳", calories:80, category:"between", active:true, icon:"🥣"},
+  {id:"kinder2", name:"2 קינדר קארדס", calories:120, category:"between", isSweet:true, active:true, icon:"🍫"},
+  {id:"petit-nutella", name:"פתיבר עם נוטלה", calories:60, category:"between", isSweet:true, active:true, icon:"🍪"},
+  {id:"ice99", name:"שלגון 99", calories:99, category:"between", isSweet:true, active:true, icon:"🍦"},
+  {id:"fruit", name:"פרי", calories:70, category:"between", active:true, icon:"🍎", isFruit:true},
   {id:"pita-hummus-egg", name:"פיתה כוסמין + חומוס + חביתה מביצה אחת", calories:260, category:"meal", active:true, icon:"🫓"},
-  {id:"rice-pb-honey", name:"פריכית + כפית רזה חמאת בוטנים ודבש", calories:70, category:"snack", active:true, icon:"🥜"},
+  {id:"rice-pb-honey", name:"פריכית + כפית רזה חמאת בוטנים ודבש", calories:70, category:"between", active:true, icon:"🥜"},
   {id:"roll-salami", name:"לחמניית כוסמין + חרדל + 4 פרוסות סלמי דק", calories:240, category:"meal", active:true, icon:"🥪"},
   {id:"big-salad", name:"סלט גדול", calories:400, category:"meal", active:true, icon:"🥗"},
   {id:"corn-bulgur", name:"שניצל תירס לייט + בורגול + ירקות", calories:270, category:"meal", active:true, icon:"🍽️"},
@@ -18,13 +18,34 @@ const DEFAULT_MEALS = [
   {id:"fries-hummus", name:"צ׳יפס באיירפריי + חומוס", calories:300, category:"meal", active:true, icon:"🍟"},
 ];
 
-const CATEGORY_LABELS = {
-  coffee:"קפה", breakfast:"בוקר", snack:"נשנוש", sweet:"מתוק", meal:"ארוחה"
-};
+const CATEGORY_LABELS = { coffee:"קפה", between:"ביניים", meal:"ארוחה" };
 
 const TIMES = ["07:30","09:00","10:30","12:30","14:30","17:00","19:30","21:00"];
 
 let meals = JSON.parse(localStorage.getItem("bisli_meals") || "null") || DEFAULT_MEALS;
+
+
+// v1.7 migration: keep every existing user-added item, but merge
+// breakfast/snack/sweet into the single visible category "between".
+let v17Migrated = false;
+meals = meals.map(m => {
+  if(m.category === "sweet"){
+    v17Migrated = true;
+    return {...m, category:"between", isSweet:true};
+  }
+  if(m.category === "breakfast" || m.category === "snack"){
+    v17Migrated = true;
+    return {...m, category:"between"};
+  }
+  if(m.category === "fruit"){
+    v17Migrated = true;
+    return {...m, category:"between", isFruit:true};
+  }
+  return m;
+});
+if(v17Migrated){
+  localStorage.setItem("bisli_meals", JSON.stringify(meals));
+}
 
 // Migration from early versions:
 // standalone bread/rice-cake items were calorie references, not complete suggestions.
@@ -35,7 +56,7 @@ const beforeMigration = meals.length;
 // Convert the old visible "fruit" category into a hidden flexible-fruit flag.
 meals = meals.map(m => {
   if (m.id === "fruit" || m.category === "fruit") {
-    return {...m, category:"snack", isFruit:true};
+    return {...m, category:"between", isFruit:true};
   }
   return m;
 });
@@ -139,6 +160,10 @@ function rememberCard(card){
   localStorage.setItem("bisli_card_history", JSON.stringify(cardHistory));
 }
 
+const MEAL_SLOTS = new Set(["12:30","19:30"]);
+const BETWEEN_SLOTS = new Set(["09:00","10:30","14:30","21:00"]);
+const COFFEE_SLOTS = new Set(["07:30","17:00"]);
+
 function generateCard(saveAsToday=true){
   const pool = meals.filter(m=>m.active && !m.baseOnly);
 
@@ -146,10 +171,9 @@ function generateCard(saveAsToday=true){
   const coffee = pool.find(m=>m.id===preferredCoffeeId)
               || randomItem(pool.filter(m=>m.category==="coffee"));
 
-  const breakfast = pool.filter(m=>m.category==="breakfast");
-  const snacks = pool.filter(m=>m.category==="snack" && !m.isFruit);
+  const between = pool.filter(m=>m.category==="between" && !m.isFruit);
   const fruits = pool.filter(m=>m.isFruit);
-  const sweets = pool.filter(m=>m.category==="sweet");
+  const sweets = between.filter(m=>m.isSweet);
 
   // Meal size is inferred only from calories; no extra field is needed in the UI.
   // 320+ = large meal. Under 320 = small meal.
@@ -166,11 +190,7 @@ function generateCard(saveAsToday=true){
   const pickUnique = (arr, used) => weightedPick(arr, used);
 
   const nonMealFillers = () =>
-    pool.filter(m =>
-      m.category!=="coffee" &&
-      m.category!=="meal" &&
-      !m.isFruit
-    );
+    pool.filter(m => m.category==="between" && !m.isFruit);
 
   let best = null;
 
@@ -186,8 +206,8 @@ function generateCard(saveAsToday=true){
     }
 
     // Morning basics.
-    slots["09:00"] = pickUnique(breakfast, used) || pickUnique(snacks, used);
-    slots["10:30"] = pickUnique(snacks, used) || pickUnique(sweets, used);
+    slots["09:00"] = pickUnique(between, used);
+    slots["10:30"] = pickUnique(between, used);
 
     // At least one fruit every day.
     const fruit = pickUnique(fruits, used);
@@ -214,14 +234,10 @@ function generateCard(saveAsToday=true){
       if(largeAtLunch){
         slots["12:30"] = large;
         // Evening is deliberately NOT another meal.
-        slots["19:30"] = pickUnique(snacks, used)
-                      || pickUnique(breakfast, used)
-                      || pickUnique(sweets, used);
+        slots["19:30"] = pickUnique(between, used);
       } else {
         // Lunch is a substantial non-meal; dinner is the one large meal.
-        slots["12:30"] = pickUnique(breakfast, used)
-                      || pickUnique(snacks, used)
-                      || pickUnique(sweets, used);
+        slots["12:30"] = pickUnique(between, used);
         slots["19:30"] = large;
       }
     } else {
@@ -251,14 +267,10 @@ function generateCard(saveAsToday=true){
     }
 
     // Afternoon and late evening are always non-meal.
-    slots["14:30"] = pickUnique(sweets, used)
-                  || pickUnique(snacks, used)
-                  || pickUnique(breakfast, used);
+    slots["14:30"] = pickUnique(sweets, used) || pickUnique(between, used);
 
     // 21:00 can only be snack/sweet, never a meal.
-    slots["21:00"] = pickUnique(sweets, used)
-                  || pickUnique(snacks, used)
-                  || pickUnique(breakfast, used);
+    slots["21:00"] = pickUnique(sweets, used) || pickUnique(between, used);
 
     // Put fruit into a sensible non-meal slot, replacing only another non-meal.
     if(fruit){
@@ -267,10 +279,9 @@ function generateCard(saveAsToday=true){
       slots[target] = fruit;
     }
 
-    // Fill any holes with non-meal items only.
+    // Fill only between-meal slots; meal slots are controlled above.
     const fillers = shuffle(nonMealFillers().filter(x=>!used.has(x.id)));
-    for(const time of TIMES){
-      if(time==="07:30" || time==="17:00") continue;
+    for(const time of BETWEEN_SLOTS){
       if(!slots[time]){
         const next = fillers.find(x=>!used.has(x.id));
         if(next){
@@ -300,6 +311,23 @@ function generateCard(saveAsToday=true){
     }
 
     if(late?.category==="meal") validStructure = false;
+
+    for(const [time, item] of Object.entries(slots)){
+      if(item?.category==="meal" && !MEAL_SLOTS.has(time)){
+        validStructure = false;
+      }
+    }
+
+    for(const time of BETWEEN_SLOTS){
+      if(slots[time] && slots[time].category!=="between"){
+        validStructure = false;
+      }
+    }
+
+    if(slots["07:30"]?.category!=="coffee" || slots["17:00"]?.category!=="coffee"){
+      validStructure = false;
+    }
+
     if(!fruit || !card.some(x=>x.isFruit)) validStructure = false;
     if(!coffee || !slots["07:30"] || !slots["17:00"]) validStructure = false;
 
@@ -487,6 +515,11 @@ window.editMeal = editMeal;
 window.toggleMeal = toggleMeal;
 
 renderMeals();
+
+if(localStorage.getItem("bisli_schedule_version") !== "1.8"){
+  localStorage.removeItem("bisli_today_card");
+  localStorage.setItem("bisli_schedule_version","1.8");
+}
 
 const savedTodayCard = loadTodayCard();
 if(savedTodayCard){
