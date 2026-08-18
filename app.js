@@ -1,4 +1,4 @@
-// ביס לי v1.4 — גיוון ארוחות קטנות + עדיפות לפיתה/לחמנייה
+// ביס לי v1.5 — זיכרון לכרטיסים אחרונים + מניעת חזרות
 
 const DEFAULT_MEALS = [
   {id:"coffee-cold", name:"קפה קר", calories:40, category:"coffee", active:true, icon:"🧊"},
@@ -46,6 +46,7 @@ if (meals.length !== beforeMigration || meals.some(m => m.isFruit && m.category 
 let settings = JSON.parse(localStorage.getItem("bisli_settings") || "null") || {morningCoffee:"cold"};
 let editingId = null;
 let currentCard = null;
+let cardHistory = JSON.parse(localStorage.getItem("bisli_card_history") || "[]");
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -59,6 +60,59 @@ function activeMeals(cat){
 
 function randomItem(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function shuffle(arr){ return [...arr].sort(()=>Math.random()-.5); }
+
+function recentMealPenalty(id){
+  let penalty = 0;
+  cardHistory.slice(0,5).forEach((card, idx)=>{
+    if(card.mealIds?.includes(id)){
+      penalty += [14,9,6,4,2][idx] || 1;
+    }
+  });
+  return penalty;
+}
+
+function weightedPick(arr, used){
+  const candidates = arr.filter(x=>!used.has(x.id));
+  if(!candidates.length) return null;
+
+  const scored = candidates.map(x=>({
+    item:x,
+    weight: Math.max(1, 16 - recentMealPenalty(x.id))
+  }));
+
+  const totalWeight = scored.reduce((s,x)=>s+x.weight,0);
+  let r = Math.random()*totalWeight;
+  for(const x of scored){
+    r -= x.weight;
+    if(r<=0){
+      used.add(x.item.id);
+      return x.item;
+    }
+  }
+  const last = scored[scored.length-1].item;
+  used.add(last.id);
+  return last;
+}
+
+function pairWasRecent(a,b){
+  if(!a || !b) return false;
+  const key = [a.id,b.id].sort().join("|");
+  return cardHistory.slice(0,5).some(c=>c.mealPair===key);
+}
+
+function rememberCard(card){
+  const mealItems = card.filter(x=>x.category==="meal");
+  const mealPair = mealItems.length>=2
+    ? [mealItems[0].id,mealItems[1].id].sort().join("|")
+    : mealItems.length===1 ? mealItems[0].id : "";
+
+  cardHistory.unshift({
+    mealIds: card.map(x=>x.id),
+    mealPair
+  });
+  cardHistory = cardHistory.slice(0,8);
+  localStorage.setItem("bisli_card_history", JSON.stringify(cardHistory));
+}
 
 function generateCard(){
   const pool = meals.filter(m=>m.active && !m.baseOnly);
@@ -84,13 +138,7 @@ function generateCard(){
   );
   const otherSmallMeals = smallMeals.filter(m => !breadSmallMeals.includes(m));
 
-  const pickUnique = (arr, used) => {
-    const candidates = arr.filter(x=>!used.has(x.id));
-    if(!candidates.length) return null;
-    const x = randomItem(candidates);
-    used.add(x.id);
-    return x;
-  };
+  const pickUnique = (arr, used) => weightedPick(arr, used);
 
   const nonMealFillers = () =>
     pool.filter(m =>
@@ -101,7 +149,7 @@ function generateCard(){
 
   let best = null;
 
-  for(let attempt=0; attempt<2500; attempt++){
+  for(let attempt=0; attempt<5000; attempt++){
     const used = new Set();
     const slots = {};
 
@@ -230,6 +278,10 @@ function generateCard(){
     if(!fruit || !card.some(x=>x.isFruit)) validStructure = false;
     if(!coffee || !slots["07:30"] || !slots["17:00"]) validStructure = false;
 
+    const lunchMeal = slots["12:30"]?.category==="meal" ? slots["12:30"] : null;
+    const dinnerMeal = slots["19:30"]?.category==="meal" ? slots["19:30"] : null;
+    const repeatedPair = pairWasRecent(lunchMeal, dinnerMeal);
+
     const total = card.reduce((s,m)=>s+m.calories,0);
 
     // Scoring: structure first, then calorie target, then card completeness.
@@ -245,6 +297,18 @@ function generateCard(){
     const nonCoffeeIds = card.filter(x=>x.category!=="coffee").map(x=>x.id);
     score += (nonCoffeeIds.length - new Set(nonCoffeeIds).size) * 500;
 
+    // Strong anti-repeat memory across recent cards.
+    card.forEach(item=>{
+      const p = recentMealPenalty(item.id);
+      score += p * (item.category==="meal" ? 32 : 8);
+    });
+
+    if(repeatedPair) score += 1400;
+
+    const lastIds = new Set(cardHistory[0]?.mealIds || []);
+    const overlap = card.filter(x=>lastIds.has(x.id) && x.category!=="coffee").length;
+    score += overlap * 110;
+
     if(!best || score < best.score){
       best = {card, total, score};
       if(score <= -500) break;
@@ -252,6 +316,9 @@ function generateCard(){
   }
 
   currentCard = best?.card || [];
+  if(currentCard.length){
+    rememberCard(currentCard);
+  }
   renderCard();
 }
 function renderCard(){
