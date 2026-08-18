@@ -1,4 +1,4 @@
-// ביס לי v1.8 — ארוחות רק בצהריים/ערב; הבוקר הוא ביניים בלבד
+// ביס לי v1.9 — מקסימום מנה אחת מבוססת פיתה/לחמנייה ביום
 
 const DEFAULT_MEALS = [
   {id:"coffee-cold", name:"קפה קר", calories:40, category:"coffee", active:true, icon:"🧊"},
@@ -163,6 +163,12 @@ function rememberCard(card){
 const MEAL_SLOTS = new Set(["12:30","19:30"]);
 const BETWEEN_SLOTS = new Set(["09:00","10:30","14:30","21:00"]);
 const COFFEE_SLOTS = new Set(["07:30","17:00"]);
+
+function isBreadBased(item){
+  if(!item) return false;
+  const n = item.name || "";
+  return n.includes("פיתה כוסמין") || n.includes("לחמניית כוסמין");
+}
 
 function generateCard(saveAsToday=true){
   const pool = meals.filter(m=>m.active && !m.baseOnly);
@@ -331,6 +337,10 @@ function generateCard(saveAsToday=true){
     if(!fruit || !card.some(x=>x.isFruit)) validStructure = false;
     if(!coffee || !slots["07:30"] || !slots["17:00"]) validStructure = false;
 
+    // Hard rule: no "spelt festival" — at most one pita/roll-based item per day.
+    const breadCount = card.filter(isBreadBased).length;
+    if(breadCount > 1) validStructure = false;
+
     const lunchMeal = slots["12:30"]?.category==="meal" ? slots["12:30"] : null;
     const dinnerMeal = slots["19:30"]?.category==="meal" ? slots["19:30"] : null;
     const repeatedPair = pairWasRecent(lunchMeal, dinnerMeal);
@@ -349,6 +359,10 @@ function generateCard(saveAsToday=true){
     // Prefer not to repeat the exact same non-coffee item.
     const nonCoffeeIds = card.filter(x=>x.category!=="coffee").map(x=>x.id);
     score += (nonCoffeeIds.length - new Set(nonCoffeeIds).size) * 500;
+
+    // Extra safety: strongly penalize more than one pita/roll-based item.
+    const breadCountForScore = card.filter(isBreadBased).length;
+    if(breadCountForScore > 1) score += (breadCountForScore - 1) * 6000;
 
     // Strong anti-repeat memory across recent cards.
     card.forEach(item=>{
@@ -516,9 +530,9 @@ window.toggleMeal = toggleMeal;
 
 renderMeals();
 
-if(localStorage.getItem("bisli_schedule_version") !== "1.8"){
+if(localStorage.getItem("bisli_schedule_version") !== "1.9"){
   localStorage.removeItem("bisli_today_card");
-  localStorage.setItem("bisli_schedule_version","1.8");
+  localStorage.setItem("bisli_schedule_version","1.9");
 }
 
 const savedTodayCard = loadTodayCard();
