@@ -1,4 +1,4 @@
-// ביס לי v1.9 — מקסימום מנה אחת מבוססת פיתה/לחמנייה ביום
+// ביס לי v2.0 — החלפת מנה + סימון נאכל + ספירת קלוריות
 
 const DEFAULT_MEALS = [
   {id:"coffee-cold", name:"קפה קר", calories:40, category:"coffee", active:true, icon:"🧊"},
@@ -68,6 +68,7 @@ let settings = JSON.parse(localStorage.getItem("bisli_settings") || "null") || {
 let editingId = null;
 let currentCard = null;
 let cardHistory = JSON.parse(localStorage.getItem("bisli_card_history") || "[]");
+let eatenSlots = new Set();
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -105,6 +106,42 @@ function loadTodayCard(){
     }
   }catch(e){}
   return null;
+}
+
+function loadEatenState(){
+  try{
+    const saved = JSON.parse(localStorage.getItem("bisli_eaten_state") || "null");
+    if(saved && saved.date===localDateKey() && Array.isArray(saved.times)){
+      eatenSlots = new Set(saved.times);
+      return;
+    }
+  }catch(e){}
+  eatenSlots = new Set();
+}
+
+function saveEatenState(){
+  localStorage.setItem("bisli_eaten_state", JSON.stringify({
+    date: localDateKey(),
+    times:[...eatenSlots]
+  }));
+}
+
+function resetEatenState(){
+  eatenSlots = new Set();
+  saveEatenState();
+}
+
+function eatenCalories(){
+  return currentCard
+    .filter(item=>eatenSlots.has(item.time))
+    .reduce((sum,item)=>sum + Number(item.calories || 0), 0);
+}
+
+function toggleEaten(time){
+  if(eatenSlots.has(time)) eatenSlots.delete(time);
+  else eatenSlots.add(time);
+  saveEatenState();
+  renderCard();
 }
 
 function recentMealPenalty(id){
@@ -168,6 +205,88 @@ function isBreadBased(item){
   if(!item) return false;
   const n = item.name || "";
   return n.includes("פיתה כוסמין") || n.includes("לחמניית כוסמין");
+}
+
+
+function cardHasFruit(card){
+  return card.some(x=>x.isFruit);
+}
+
+function cardHasSweet(card){
+  // If no sweet-tagged items exist in the active database, do not block replacements.
+  const sweetExists = meals.some(m=>m.active && m.isSweet);
+  return !sweetExists || card.some(x=>x.isSweet);
+}
+
+function replacementCandidateValid(testCard, time, original, candidate){
+  if(testCard.filter(isBreadBased).length > 1) return false;
+  if(!cardHasFruit(testCard)) return false;
+  if(!cardHasSweet(testCard)) return false;
+
+  if(COFFEE_SLOTS.has(time) && candidate.category!=="coffee") return false;
+  if(BETWEEN_SLOTS.has(time) && candidate.category!=="between") return false;
+
+  if(MEAL_SLOTS.has(time)){
+    // Preserve the role of this slot. In a one-large-meal day, a between slot
+    // stays between; in a two-small-meal day, a small meal stays a small meal.
+    if(original.category==="between" && candidate.category!=="between") return false;
+    if(original.category==="meal"){
+      if(candidate.category!=="meal") return false;
+      const originalLarge = original.calories >= 320;
+      const candidateLarge = candidate.calories >= 320;
+      if(originalLarge !== candidateLarge) return false;
+    }
+  }
+
+  return true;
+}
+
+function replaceSlot(time){
+  if(eatenSlots.has(time)) return;
+
+  const index = currentCard.findIndex(x=>x.time===time);
+  if(index<0) return;
+
+  const original = currentCard[index];
+  const pool = meals.filter(m=>m.active && !m.baseOnly && m.id!==original.id);
+  const otherIds = new Set(currentCard.filter((_,i)=>i!==index).map(x=>x.id));
+
+  let candidates = pool.filter(candidate=>{
+    // Coffee may repeat across the two fixed coffee slots; other items should not.
+    if(candidate.category!=="coffee" && otherIds.has(candidate.id)) return false;
+
+    // Replacing the generic fruit should stay fruit so the daily fruit rule survives.
+    if(original.isFruit && !candidate.isFruit) return false;
+
+    const testCard = currentCard.map((item,i)=>
+      i===index ? {...candidate, time} : item
+    );
+    return replacementCandidateValid(testCard, time, original, candidate);
+  });
+
+  if(!candidates.length) return;
+
+  const currentTotal = currentCard.reduce((s,m)=>s+m.calories,0);
+  const target = 1200;
+
+  candidates = candidates
+    .map(candidate=>{
+      const newTotal = currentTotal - original.calories + candidate.calories;
+      let score = Math.abs(newTotal-target);
+      if(newTotal<1100) score += (1100-newTotal)*2;
+      if(newTotal>1300) score += (newTotal-1300)*2;
+      score += recentMealPenalty(candidate.id) * (candidate.category==="meal" ? 18 : 5);
+      return {candidate, score};
+    })
+    .sort((a,b)=>a.score-b.score);
+
+  // Pick from the best few so repeated taps on "החלף" still feel varied.
+  const top = candidates.slice(0, Math.min(3,candidates.length));
+  const picked = top[Math.floor(Math.random()*top.length)].candidate;
+
+  currentCard[index] = {...picked, time};
+  saveTodayCard(currentCard);
+  renderCard();
 }
 
 function generateCard(saveAsToday=true){
@@ -395,17 +514,40 @@ function renderCard(){
   const container = $("#dailyMenu");
   const total = currentCard.reduce((s,m)=>s+m.calories,0);
   $("#dayTotal").textContent = `${total} קל׳`;
+  $("#eatenTotal").textContent = `${eatenCalories()} קל׳`;
+
   const dayName = new Intl.DateTimeFormat("he-IL",{weekday:"long"}).format(new Date());
   $("#dayTitle").textContent = dayName;
-  container.innerHTML = currentCard.map(m=>`
-    <div class="menu-row">
-      <div class="menu-time">${m.time}</div>
-      <div class="menu-name">${m.icon || "•"} ${m.name}</div>
-      <div class="menu-cal">${m.calories} קל׳</div>
-    </div>
-  `).join("");
-}
 
+  container.innerHTML = currentCard.map(m=>{
+    const eaten = eatenSlots.has(m.time);
+    return `
+      <div class="menu-row ${eaten ? "eaten" : ""}">
+        <div class="menu-time">${m.time}</div>
+        <div class="menu-main">
+          <div class="menu-name">${m.icon || "•"} ${m.name}</div>
+          <div class="row-actions">
+            <button class="row-action eat ${eaten ? "active" : ""}" data-eat-time="${m.time}">
+              ${eaten ? "✓ נאכל" : "✓ אכלתי"}
+            </button>
+            <button class="row-action replace" data-replace-time="${m.time}" ${eaten ? "disabled" : ""}>
+              ↻ החלף
+            </button>
+          </div>
+        </div>
+        <div class="menu-cal">${m.calories} קל׳</div>
+      </div>
+    `;
+  }).join("");
+
+  $$("[data-eat-time]").forEach(btn=>{
+    btn.addEventListener("click", ()=>toggleEaten(btn.dataset.eatTime));
+  });
+
+  $$("[data-replace-time]").forEach(btn=>{
+    btn.addEventListener("click", ()=>replaceSlot(btn.dataset.replaceTime));
+  });
+}
 function renderMeals(){
   const q = $("#mealSearch").value.trim().toLowerCase();
   const list = meals.filter(m=>m.name.toLowerCase().includes(q));
@@ -493,7 +635,14 @@ $("#deleteMealBtn").addEventListener("click", ()=>{
 
 $("#addMealBtn").addEventListener("click", openAddMeal);
 $("#mealSearch").addEventListener("input", renderMeals);
-$("#newCardBtn").addEventListener("click", ()=>generateCard(true));
+$("#newCardBtn").addEventListener("click", ()=>{
+  if(eatenSlots.size){
+    const ok = confirm("יש דברים שכבר סימנת כנאכלו. כרטיס אחר יאפס את סימוני האכילה של היום. להמשיך?");
+    if(!ok) return;
+  }
+  resetEatenState();
+  generateCard(true);
+});
 
 $$(".nav-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
@@ -530,10 +679,11 @@ window.toggleMeal = toggleMeal;
 
 renderMeals();
 
-if(localStorage.getItem("bisli_schedule_version") !== "1.9"){
-  localStorage.removeItem("bisli_today_card");
-  localStorage.setItem("bisli_schedule_version","1.9");
+if(localStorage.getItem("bisli_schedule_version") !== "2.0"){
+  localStorage.setItem("bisli_schedule_version","2.0");
 }
+
+loadEatenState();
 
 const savedTodayCard = loadTodayCard();
 if(savedTodayCard){
